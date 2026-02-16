@@ -8,31 +8,52 @@ A collection of Home Assistant automation blueprints for enhanced home control.
 
 Synchronizes a virtual dimmer in Niko Home Control with an actual dimmer (e.g., Philips Hue dimmer).
 
-This blueprint enables control of a Hue dimmer on the Niko digital black screen by maintaining sync between:
+This blueprint enables control of a dimmer on the Niko Digital Black screen by maintaining sync between:
 - **Virtual dimmer**: Niko Home Control virtual dimmer entity
 - **Physical dimmer**: Actual dimmer device (e.g., Philips Hue dimmer)
 
-#### Requirements
+**Features:**
+- Two-way or one-directional synchronization
+- Syncs brightness and color attributes
+- Configurable delay to prevent sync loops
 
-- Home Assistant instance with Niko Home Control integration
-- Physical dimmer device (e.g., Philips Hue dimmer)
-- Automation support enabled
+### Niko Cover Sync
 
-#### Installation
+Synchronizes a virtual cover (blinds/shades) in Niko Home Control with an actual cover device (e.g., Somfy, Velux).
 
-1. Copy the blueprint file to your Home Assistant blueprints directory:
-   ```
-   blueprints/automation/niko_dimmer_sync.yaml
-   ```
+This blueprint solves the problem of controlling windows on the Niko Digital Black screen by maintaining sync between:
+- **Virtual cover**: Niko Home Control virtual cover entity
+- **Actual cover**: Physical window/blind device (e.g., Somfy, Velux)
 
-2. Create automations from the blueprint via Settings → Automations & Scenes → Create Automation → Choose Blueprint
+Control your windows via the Niko app/screen and the actual device will move. Control via Home Assistant or the integrated app and the Niko screen updates.
 
-#### Configuration
+**Features:**
+- Two-way synchronization (bidirectional)
+- Syncs position (0-100%) and tilt position
+- Configurable delay to prevent sync loops
+- Works with any Home Assistant cover device
 
-Select the following when creating an automation from this blueprint:
-- **Virtual Dimmer**: The Niko Home Control virtual dimmer entity
-- **Physical Dimmer**: The actual dimmer device to sync with
-- **Synchronization Direction**: Two-way, virtual to physical, or physical to virtual
+## Installation
+
+The blueprints are hosted on GitHub and can be imported directly into Home Assistant:
+
+1. In Home Assistant: **Settings → Automations & Scenes → Create Automation → Choose Blueprint**
+2. Click **"Browse Blueprints"** and search for the blueprints by name, or
+3. Use the **"Browse Blueprint Community Blueprints"** option
+
+Alternatively, import directly using the repository URL.
+
+## Configuration Examples
+
+### Niko Dimmer Sync
+- **Virtual Dimmer**: Select your Niko virtual dimmer entity
+- **Physical Dimmer**: Select your actual dimmer device
+- **Sync Direction**: Choose two-way or directional sync
+
+### Niko Cover Sync
+- **Actual Cover Device**: Select your Somfy/Velux or other physical cover
+- **Virtual Niko Cover**: Select your Niko virtual cover entity
+- **Sync Delay**: Default 1.5 seconds (adjust if needed)
 
 ## Usage
 
