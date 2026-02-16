@@ -1,6 +1,8 @@
 blueprint:
-  name: Niko Cover Sync
-  description: Sync a virtual cover in Niko Home Control with an actual cover device (e.g., Somfy, Velux)
+  name: Niko Cover Sync (Action-Based)
+  description: |
+    Sync a virtual cover in Niko Home Control with an actual cover device by forwarding open/close/stop actions.
+    When one cover receives a command, the action is forwarded to the other. When movement stops, positions are synced.
   domain: automation
   author: thiesens
   source_url: https://github.com/thiesens/homeassistant-blueprints/blob/main/blueprints/automation/niko_cover_sync.yaml
@@ -19,80 +21,139 @@ blueprint:
         entity:
           domain: cover
           multiple: false
-    sync_delay:
-      name: Sync Delay
-      description: Delay in seconds after a state change before syncing to prevent rapid re-triggering
-      default: 1.5
+    position_sync_delay:
+      name: Position Sync Delay
+      description: Delay in seconds after movement stops before syncing final position
+      default: 1
       selector:
         number:
           min: 0.5
-          max: 5
+          max: 3
           step: 0.5
           unit_of_measurement: seconds
 
 trigger:
-  - platform: state
-    entity_id: !input actual_cover
-    attribute: current_position
-  - platform: state
-    entity_id: !input actual_cover
-    attribute: current_tilt_position
+  # Virtual cover position changes (opens/closes)
   - platform: state
     entity_id: !input virtual_cover
     attribute: current_position
+    id: virtual_pos_change
+
+  # Virtual cover stops moving
   - platform: state
     entity_id: !input virtual_cover
-    attribute: current_tilt_position
+    attribute: is_moving
+    to: "false"
+    id: virtual_stopped
+
+  # Actual cover position changes (opens/closes)
+  - platform: state
+    entity_id: !input actual_cover
+    attribute: current_position
+    id: actual_pos_change
+
+  # Actual cover stops moving
+  - platform: state
+    entity_id: !input actual_cover
+    attribute: is_moving
+    to: "false"
+    id: actual_stopped
 
 condition: []
 
 action:
-  # Add delay to allow state to settle and prevent rapid re-triggering
-  - delay:
-      seconds: !input sync_delay
-
   - choose:
-      # Sync actual to virtual
+      # Virtual cover is opening (position increased while moving)
       - conditions:
           - condition: template
-            value_template: "{{ trigger.entity_id == (actual_cover | string) }}"
+            value_template: "{{ trigger.id == 'virtual_pos_change' }}"
+          - condition: template
+            value_template: "{{ state_attr(virtual_cover, 'is_moving') == true }}"
+          - condition: template
+            value_template: "{{ trigger.to_state.state | int(0) > trigger.from_state.state | int(0) }}"
         sequence:
-          - service: cover.set_cover_position
+          - condition: template
+            value_template: "{{ state_attr(actual_cover, 'is_moving') != true }}"
+          - service: cover.open_cover
             target:
-              entity_id: !input virtual_cover
-            data:
-              position: "{{ state_attr(actual_cover, 'current_position') | int(0) }}"
-          # Sync tilt position if available
-          - if:
-              - condition: template
-                value_template: "{{ state_attr(actual_cover, 'current_tilt_position') is not none }}"
-            then:
-              - service: cover.set_cover_tilt_position
-                target:
-                  entity_id: !input virtual_cover
-                data:
-                  tilt_position: "{{ state_attr(actual_cover, 'current_tilt_position') | int(0) }}"
+              entity_id: !input actual_cover
 
-      # Sync virtual to actual
+      # Virtual cover is closing (position decreased while moving)
       - conditions:
           - condition: template
-            value_template: "{{ trigger.entity_id == (virtual_cover | string) }}"
+            value_template: "{{ trigger.id == 'virtual_pos_change' }}"
+          - condition: template
+            value_template: "{{ state_attr(virtual_cover, 'is_moving') == true }}"
+          - condition: template
+            value_template: "{{ trigger.to_state.state | int(0) < trigger.from_state.state | int(0) }}"
         sequence:
+          - condition: template
+            value_template: "{{ state_attr(actual_cover, 'is_moving') != true }}"
+          - service: cover.close_cover
+            target:
+              entity_id: !input actual_cover
+
+      # Virtual cover stopped moving
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.id == 'virtual_stopped' }}"
+        sequence:
+          - service: cover.stop_cover
+            target:
+              entity_id: !input actual_cover
+          - delay:
+              seconds: !input position_sync_delay
           - service: cover.set_cover_position
             target:
               entity_id: !input actual_cover
             data:
               position: "{{ state_attr(virtual_cover, 'current_position') | int(0) }}"
-          # Sync tilt position if available
-          - if:
-              - condition: template
-                value_template: "{{ state_attr(virtual_cover, 'current_tilt_position') is not none }}"
-            then:
-              - service: cover.set_cover_tilt_position
-                target:
-                  entity_id: !input actual_cover
-                data:
-                  tilt_position: "{{ state_attr(virtual_cover, 'current_tilt_position') | int(0) }}"
 
-mode: parallel
-max_exceeded: silent
+      # Actual cover is opening (position increased while moving)
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.id == 'actual_pos_change' }}"
+          - condition: template
+            value_template: "{{ state_attr(actual_cover, 'is_moving') == true }}"
+          - condition: template
+            value_template: "{{ trigger.to_state.state | int(0) > trigger.from_state.state | int(0) }}"
+        sequence:
+          - condition: template
+            value_template: "{{ state_attr(virtual_cover, 'is_moving') != true }}"
+          - service: cover.open_cover
+            target:
+              entity_id: !input virtual_cover
+
+      # Actual cover is closing (position decreased while moving)
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.id == 'actual_pos_change' }}"
+          - condition: template
+            value_template: "{{ state_attr(actual_cover, 'is_moving') == true }}"
+          - condition: template
+            value_template: "{{ trigger.to_state.state | int(0) < trigger.from_state.state | int(0) }}"
+        sequence:
+          - condition: template
+            value_template: "{{ state_attr(virtual_cover, 'is_moving') != true }}"
+          - service: cover.close_cover
+            target:
+              entity_id: !input virtual_cover
+
+      # Actual cover stopped moving
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.id == 'actual_stopped' }}"
+        sequence:
+          - service: cover.stop_cover
+            target:
+              entity_id: !input virtual_cover
+          - delay:
+              seconds: !input position_sync_delay
+          - service: cover.set_cover_position
+            target:
+              entity_id: !input virtual_cover
+            data:
+              position: "{{ state_attr(actual_cover, 'current_position') | int(0) }}"
+
+mode: queued
+max_exceeded: drop
