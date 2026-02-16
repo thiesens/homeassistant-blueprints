@@ -156,4 +156,3 @@ action:
               position: "{{ state_attr(actual_cover, 'current_position') | int(0) }}"
 
 mode: queued
-max_exceeded: silent
