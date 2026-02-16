@@ -4,7 +4,13 @@ A collection of Home Assistant automation blueprints for enhanced home control.
 
 ## Blueprints
 
-### Niko Dimmer Sync
+### Niko
+
+#### Digital Black Virtual Entities
+
+These blueprints sync virtual entities in Niko Home Control with actual devices via Home Assistant, enabling full control through the Niko Digital Black wall display while keeping state synchronized across all interfaces.
+
+##### Niko Dimmer Sync
 
 Synchronizes a virtual dimmer in Niko Home Control with an actual dimmer (e.g., Philips Hue dimmer).
 
@@ -17,7 +23,7 @@ This blueprint enables control of a dimmer on the Niko Digital Black screen by m
 - Syncs brightness and color attributes
 - Configurable delay to prevent sync loops
 
-### Niko Cover Sync
+##### Niko Cover Sync
 
 Synchronizes a virtual cover (blinds/shades) in Niko Home Control with an actual cover device (e.g., Somfy, Velux).
 
