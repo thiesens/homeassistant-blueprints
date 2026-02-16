@@ -155,4 +155,4 @@ action:
             data:
               position: "{{ state_attr(actual_cover, 'current_position') | int(0) }}"
 
-mode: queued
+mode: single
