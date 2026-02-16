@@ -1,0 +1,81 @@
+blueprint:
+  name: Niko Dimmer Sync
+  description: Sync a virtual dimmer in Niko Home Control with an actual dimmer (e.g., Philips Hue dimmer)
+  domain: automation
+  author: thiesens
+  source_url: https://github.com/thiesens/homeassistant-blueprints/blob/main/blueprints/automation/niko_dimmer_sync.yaml
+  input:
+    virtual_dimmer:
+      name: Virtual Dimmer
+      description: Niko Home Control virtual dimmer entity
+      selector:
+        entity:
+          domain: light
+          multiple: false
+    physical_dimmer:
+      name: Physical Dimmer
+      description: Physical dimmer device to sync with (e.g., Hue dimmer)
+      selector:
+        entity:
+          domain: light
+          multiple: false
+    sync_direction:
+      name: Synchronization Direction
+      description: Direction of synchronization between dimmers
+      default: two-way
+      selector:
+        select:
+          options:
+            - label: Two-way
+              value: two-way
+            - label: Virtual to Physical only
+              value: virtual_to_physical
+            - label: Physical to Virtual only
+              value: physical_to_virtual
+
+trigger:
+  - platform: state
+    entity_id: !input virtual_dimmer
+    condition: template
+    value_template: "{{ trigger.from_state != trigger.to_state }}"
+  - platform: state
+    entity_id: !input physical_dimmer
+    condition: template
+    value_template: "{{ trigger.from_state != trigger.to_state }}"
+
+condition: []
+
+action:
+  - choose:
+      # Sync virtual to physical
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.entity_id == (virtual_dimmer | string) }}"
+          - condition: template
+            value_template: "{{ sync_direction in ['two-way', 'virtual_to_physical'] }}"
+        sequence:
+          - service: light.turn_on
+            target:
+              entity_id: !input physical_dimmer
+            data:
+              brightness: "{{ state_attr(virtual_dimmer, 'brightness') | int(0) }}"
+              color_temp: "{{ state_attr(virtual_dimmer, 'color_temp') }}"
+              hs_color: "{{ state_attr(virtual_dimmer, 'hs_color') }}"
+
+      # Sync physical to virtual
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.entity_id == (physical_dimmer | string) }}"
+          - condition: template
+            value_template: "{{ sync_direction in ['two-way', 'physical_to_virtual'] }}"
+        sequence:
+          - service: light.turn_on
+            target:
+              entity_id: !input virtual_dimmer
+            data:
+              brightness: "{{ state_attr(physical_dimmer, 'brightness') | int(0) }}"
+              color_temp: "{{ state_attr(physical_dimmer, 'color_temp') }}"
+              hs_color: "{{ state_attr(physical_dimmer, 'hs_color') }}"
+
+mode: parallel
+max_exceeded: silent

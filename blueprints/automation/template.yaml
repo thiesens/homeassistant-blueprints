@@ -1,0 +1,67 @@
+blueprint:
+  name: Blueprint Template
+  description: A template blueprint for creating new automations
+  domain: automation
+  author: thiesens
+  source_url: https://github.com/thiesens/homeassistant-blueprints/blob/main/blueprints/automation/template.yaml
+  input:
+    example_entity:
+      name: Example Entity
+      description: Select an entity
+      default: ""
+      selector:
+        entity:
+          domain: light
+          multiple: false
+    example_text:
+      name: Example Text
+      description: Enter some text
+      default: ""
+      selector:
+        text:
+    example_number:
+      name: Example Number
+      description: Enter a number
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+    example_select:
+      name: Example Select
+      description: Choose an option
+      default: option_one
+      selector:
+        select:
+          options:
+            - label: Option One
+              value: option_one
+            - label: Option Two
+              value: option_two
+
+# Triggers: What starts this automation
+trigger:
+  - platform: state
+    entity_id: !input example_entity
+    # Optional: add 'to:' for specific state, 'from:' for previous state
+    # Optional: add 'for:' for duration (e.g., for: "00:05:00" for 5 minutes)
+
+# Conditions: Additional checks that must be true
+condition: []
+  # Example:
+  # - condition: time
+  #   after: "08:00:00"
+  #   before: "22:00:00"
+
+# Actions: What the automation does
+action:
+  - service: light.turn_on
+    target:
+      entity_id: !input example_entity
+    data:
+      brightness: 255
+
+# Mode options: parallel, queued, restart, single
+mode: parallel
+max_exceeded: silent
