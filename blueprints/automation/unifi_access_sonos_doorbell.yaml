@@ -1,26 +1,332 @@
 blueprint:
   name: UniFi Access + Sonos Doorbell
   description: |
-    This blueprint allows you to trigger a Sonos speaker when a UniFi Access doorbell is pressed.
+    Announces an official Home Assistant UniFi Access doorbell ring on one or more
+    Sonos players until the configured door opens or a safety timeout is reached.
+
+    A shared input_boolean is used as a global session lock. If another doorbell
+    using this blueprint rings while a session is active, that ring is ignored.
+
+    Sonos playback and grouping are snapshotted before the announcement and
+    restored when the session ends. Selected media players are muted during the
+    session and their original mute state is restored afterwards.
   domain: automation
+  author: Henrik Mathiesen
+  homeassistant:
+    min_version: "2026.7.0"
+  source_url: https://github.com/thiesens/homeassistant-blueprints/blob/main/blueprints/automation/unifi_access_sonos_doorbell.yaml
+
   input:
     doorbell:
-      name: UniFi Access Doorbell
-      description: The UniFi Access doorbell device that will trigger the Sonos speaker.
+      name: Doorbell event
+      description: The Doorbell event entity provided by the official UniFi Access integration.
       selector:
         entity:
-          domain: binary_sensor
+          filter:
+            - domain: event
+              device_class: doorbell
           multiple: false
-    sonos_speaker:
-      name: Sonos Speaker
-      description: The Sonos speaker that will play a sound when the doorbell is pressed.
+
+    door_sensor:
+      name: Door position sensor
+      description: The binary sensor for the same door. The session ends when the door opens.
       selector:
         entity:
-          domain: media_player
+          filter:
+            - domain: binary_sensor
           multiple: false
+
+    session_lock:
+      name: Global doorbell session lock
+      description: >
+        Create one input_boolean helper and select the same helper in every
+        instance of this blueprint.
+      selector:
+        entity:
+          filter:
+            - domain: input_boolean
+          multiple: false
+
+    sonos_players:
+      name: Sonos players
+      description: Select the Sonos players that should announce the doorbell.
+      selector:
+        entity:
+          filter:
+            - integration: sonos
+              domain: media_player
+          multiple: true
+
+    sonos_volume:
+      name: Sonos announcement volume
+      description: Volume used for all selected Sonos players while announcing the doorbell.
+      default: 0.5
+      selector:
+        number:
+          min: 0
+          max: 1
+          step: 0.01
+          mode: slider
+
+    mute_players:
+      name: Other media players to mute
+      description: >
+        These media players are muted for the duration of the session.
+        Their original mute state is restored afterwards.
+      default: []
+      selector:
+        entity:
+          filter:
+            - domain: media_player
+          multiple: true
+
     sound_file:
-      name: Sound File
-      description: The sound file to play on the Sonos speaker when the doorbell is pressed.
-      default: "doorbell.mp3"
+      name: Doorbell sound
+      description: Media content ID to play on the Sonos players.
+      default: media-source://media_source/local/ding-47489.mp3
       selector:
         text:
+
+    repeat_interval:
+      name: Chime repeat interval
+      description: How long to wait between chimes.
+      default: "00:00:05"
+      selector:
+        duration: {}
+
+    max_session:
+      name: Maximum session duration
+      description: >
+        Safety timeout. The session always ends after this duration even if
+        the door never opens.
+      default: "00:02:00"
+      selector:
+        duration: {}
+
+triggers:
+  - trigger: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input doorbell
+    id: doorbell_event_changed
+
+  - trigger: homeassistant
+    event: start
+    id: homeassistant_start
+
+variables:
+  doorbell: !input doorbell
+  door_sensor: !input door_sensor
+  session_lock: !input session_lock
+  sonos_players: !input sonos_players
+  mute_players: !input mute_players
+  sound_file: !input sound_file
+  repeat_interval: !input repeat_interval
+  max_session: !input max_session
+
+mode: single
+max_exceeded: silent
+
+conditions: []
+
+actions:
+  - choose:
+
+      # ------------------------------------------------------------------
+      # Home Assistant restarted.
+      #
+      # A running automation cannot survive a restart, so any old lock
+      # must be cleared.
+      # ------------------------------------------------------------------
+      - alias: Reset stale session lock after Home Assistant restart
+        conditions:
+          - condition: trigger
+            id: homeassistant_start
+        sequence:
+          - action: input_boolean.turn_off
+            target:
+              entity_id: !input session_lock
+
+      # ------------------------------------------------------------------
+      # Doorbell ring.
+      #
+      # Only start if no other doorbell session is active.
+      # ------------------------------------------------------------------
+      - alias: Start doorbell session
+        conditions:
+          - condition: trigger
+            id: doorbell_event_changed
+
+          - condition: state
+            entity_id: !input session_lock
+            state: "off"
+
+          - condition: template
+            value_template: >-
+              {{
+                trigger.event.data.new_state is not none
+                and
+                trigger.event.data.new_state.attributes.event_type == 'ring'
+              }}
+
+        sequence:
+
+          # --------------------------------------------------------------
+          # Claim the global session lock BEFORE touching Sonos.
+          # --------------------------------------------------------------
+          - alias: Claim global doorbell session lock
+            action: input_boolean.turn_on
+            target:
+              entity_id: !input session_lock
+
+          # --------------------------------------------------------------
+          # Snapshot Sonos.
+          # --------------------------------------------------------------
+          - alias: Snapshot Sonos playback and grouping
+            action: sonos.snapshot
+            target:
+              entity_id: !input sonos_players
+            data:
+              with_group: true
+
+          # --------------------------------------------------------------
+          # Set announcement volume.
+          # --------------------------------------------------------------
+          - alias: Set Sonos announcement volume
+            action: media_player.volume_set
+            target:
+              entity_id: !input sonos_players
+            data:
+              volume_level: !input sonos_volume
+
+          # --------------------------------------------------------------
+          # Remember which other media players were NOT muted before
+          # the session.
+          # --------------------------------------------------------------
+          - alias: Remember original mute state
+            variables:
+              players_to_unmute: >-
+                {% set ns = namespace(players=[]) %}
+
+                {% for player in mute_players %}
+                  {% if state_attr(player, 'is_volume_muted') is false %}
+                    {% set ns.players = ns.players + [player] %}
+                  {% endif %}
+                {% endfor %}
+
+                {{ ns.players }}
+
+          # --------------------------------------------------------------
+          # Mute other media players.
+          # --------------------------------------------------------------
+          - alias: Mute other media players
+            repeat:
+              for_each: !input mute_players
+              sequence:
+                - action: media_player.volume_mute
+                  target:
+                    entity_id: "{{ repeat.item }}"
+                  data:
+                    is_volume_muted: true
+
+          # --------------------------------------------------------------
+          # Doorbell session.
+          #
+          # Continue until:
+          #   - door opens
+          #   - maximum session duration is reached
+          #
+          # The chime is played immediately, then repeated according to
+          # repeat_interval.
+          # --------------------------------------------------------------
+          - alias: Ring until door opens or timeout
+            variables:
+              session_started: "{{ now() }}"
+
+          - repeat:
+              while:
+                - condition: template
+                  value_template: >-
+                    {{
+                      not is_state(door_sensor, 'on')
+                      and
+                      (now() - session_started).total_seconds()
+                      <
+                      as_timedelta(max_session).total_seconds()
+                    }}
+
+              sequence:
+
+                # --------------------------------------------------------
+                # Play the doorbell sound.
+                # --------------------------------------------------------
+                - alias: Play doorbell sound
+                  action: media_player.play_media
+                  target:
+                    entity_id: !input sonos_players
+                  data:
+                    media_content_id: !input sound_file
+                    media_content_type: audio/mpeg
+
+                # --------------------------------------------------------
+                # Wait for either:
+                #
+                #   1. Door opens
+                #   2. Repeat interval expires
+                #   3. Maximum session timeout expires
+                # --------------------------------------------------------
+                - alias: Wait for door or next chime
+                  wait_for_trigger:
+                    - trigger: state
+                      entity_id: !input door_sensor
+                      to: "on"
+
+                  timeout: >-
+                    {% set elapsed =
+                         (now() - session_started).total_seconds() %}
+
+                    {% set remaining =
+                         as_timedelta(max_session).total_seconds()
+                         - elapsed %}
+
+                    {{
+                      [
+                        as_timedelta(repeat_interval).total_seconds(),
+                        remaining
+                      ]
+                      | min
+                      | max(0)
+                    }}
+
+                  continue_on_timeout: true
+
+          # --------------------------------------------------------------
+          # Restore Sonos.
+          # --------------------------------------------------------------
+          - alias: Restore Sonos playback and grouping
+            action: sonos.restore
+            target:
+              entity_id: !input sonos_players
+            data:
+              with_group: true
+
+          # --------------------------------------------------------------
+          # Restore only players that were originally unmuted.
+          # --------------------------------------------------------------
+          - alias: Restore original mute state
+            repeat:
+              for_each: "{{ players_to_unmute }}"
+              sequence:
+                - action: media_player.volume_mute
+                  target:
+                    entity_id: "{{ repeat.item }}"
+                  data:
+                    is_volume_muted: false
+
+          # --------------------------------------------------------------
+          # Release global session lock.
+          # --------------------------------------------------------------
+          - alias: Release global doorbell session lock
+            action: input_boolean.turn_off
+            target:
+              entity_id: !input session_lock
