@@ -1,0 +1,26 @@
+blueprint:
+  name: UniFi Access + Sonos Doorbell
+  description: |
+    This blueprint allows you to trigger a Sonos speaker when a UniFi Access doorbell is pressed.
+  domain: automation
+  input:
+    doorbell:
+      name: UniFi Access Doorbell
+      description: The UniFi Access doorbell device that will trigger the Sonos speaker.
+      selector:
+        entity:
+          domain: binary_sensor
+          multiple: false
+    sonos_speaker:
+      name: Sonos Speaker
+      description: The Sonos speaker that will play a sound when the doorbell is pressed.
+      selector:
+        entity:
+          domain: media_player
+          multiple: false
+    sound_file:
+      name: Sound File
+      description: The sound file to play on the Sonos speaker when the doorbell is pressed.
+      default: "doorbell.mp3"
+      selector:
+        text:
